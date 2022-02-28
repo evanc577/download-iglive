@@ -1,0 +1,14 @@
+[package]
+name = "igtv-downloader"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+crossbeam = "0.8"
+quick-xml = { version = "0.22", features = [ "serialize" ] }
+indicatif = "0.17.0-rc.2"
+reqwest = "0.11"
+serde = { version = "1.0", features = [ "derive" ] }
+tokio = { version = "1.15", features = [ "full" ] }
