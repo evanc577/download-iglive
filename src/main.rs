@@ -5,6 +5,7 @@ mod download;
 
 #[tokio::main]
 async fn main() {
-    Downloader::download().await;
+    let url = std::env::args().nth(1).unwrap();
+    Downloader::download(&url).await;
 }
 
