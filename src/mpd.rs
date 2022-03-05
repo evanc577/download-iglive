@@ -1,5 +1,6 @@
 use anyhow::Result;
 use reqwest::header::HeaderName;
+use reqwest::Url;
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug)]
@@ -13,7 +14,7 @@ pub struct Mpd {
     pub start_frame: usize,
 
     #[serde(skip)]
-    pub finished: bool
+    pub finished: bool,
 }
 
 #[derive(Deserialize, Debug)]
@@ -24,6 +25,7 @@ struct Period {
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct AdaptationSet {
     #[serde(rename = "Representation")]
     representations: Vec<Representation>,
@@ -67,15 +69,15 @@ pub struct Segment {
 }
 
 impl Mpd {
-    pub async fn from_url(url: &str) -> Result<Self> {
-        let resp = reqwest::get(url).await?;
+    pub async fn from_url(url: impl AsRef<str>) -> Result<Self> {
+        let resp = reqwest::get(url.as_ref()).await?;
         let headers = resp.headers().clone();
         let text = resp.text().await?;
 
         let mut manifest: Self = quick_xml::de::from_str(&text)?;
 
         if let Some(v) = headers.get(HeaderName::from_static("x-fb-video-broadcast-ended")) {
-            if v.to_str()? == "1"  {
+            if v.to_str()? == "1" {
                 manifest.finished = true;
             }
         }
@@ -119,5 +121,14 @@ impl Representation {
         } else {
             MediaType::Unknown
         }
+    }
+
+    pub fn download_url(&self, url_base: &Url, t: impl ToString) -> Result<Url> {
+        Ok(url_base.join(
+            &self
+                .segment_template
+                .media_path
+                .replace("$Time$", &t.to_string()),
+        )?)
     }
 }

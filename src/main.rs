@@ -8,6 +8,6 @@ mod state;
 #[tokio::main]
 async fn main() {
     let url = std::env::args().nth(1).unwrap();
-    Downloader::download(&url).await;
+    Downloader::download(&url).await.unwrap();
 }
 

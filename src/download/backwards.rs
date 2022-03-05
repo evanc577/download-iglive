@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -48,24 +48,20 @@ async fn download_backwards(
 ) -> Result<()> {
     let media_type = rep.media_type();
 
+    // Local copy
     let mut deltas = state.lock().await.deltas[&media_type].clone();
 
     // Get latest time
-    let first_t = rep
-        .segment_template
-        .segment_timeline
-        .segments
+    let mut latest_t = *state.lock().await.downloaded_segs[&media_type]
         .iter()
-        .rev()
-        .next()
-        .unwrap()
-        .t as isize;
-    let mut latest_t = first_t;
+        .min()
+        .unwrap() as isize;
 
     // Try downloading segments until the first one is reached
     'outer: loop {
         if latest_t <= start_frame as isize {
             // If reached first frame, finish successfully
+            pb.finish_with_message("Finished");
             return Ok(());
         }
 
@@ -85,11 +81,7 @@ async fn download_backwards(
             pb.tick();
 
             // Try to download segment
-            let url = url_base.join(
-                &rep.segment_template
-                    .media_path
-                    .replace("$Time$", &t.to_string()),
-            )?;
+            let url = rep.download_url(url_base, t)?;
             let filename = dir.as_ref().join(
                 url.path_segments()
                     .ok_or(IgtvError::InvalidUrl)?
@@ -100,7 +92,9 @@ async fn download_backwards(
             if (download_file(&url, filename).await).is_ok() {
                 // Segment exists, continue onto next segment
                 latest_t = t;
+                // Update local copy
                 *deltas.entry(x).or_insert(0) += 1;
+                // Update global copy
                 *state
                     .lock()
                     .await
@@ -112,7 +106,6 @@ async fn download_backwards(
                 continue 'outer;
             }
         }
-        return Ok(());
     }
 }
 
