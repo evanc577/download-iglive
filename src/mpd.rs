@@ -1,3 +1,5 @@
+use anyhow::Result;
+use reqwest::header::HeaderName;
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug)]
@@ -6,6 +8,12 @@ pub struct Mpd {
     period: Period,
     #[serde(rename = "loapStreamId")]
     pub id: String,
+
+    #[serde(rename = "publishFrameTime")]
+    pub start_frame: usize,
+
+    #[serde(skip)]
+    pub finished: bool
 }
 
 #[derive(Deserialize, Debug)]
@@ -59,9 +67,20 @@ pub struct Segment {
 }
 
 impl Mpd {
-    pub async fn from_url(url: &str) -> Self {
-        let body = reqwest::get(url).await.unwrap().text().await.unwrap();
-        quick_xml::de::from_str(&body).unwrap()
+    pub async fn from_url(url: &str) -> Result<Self> {
+        let resp = reqwest::get(url).await?;
+        let headers = resp.headers().clone();
+        let text = resp.text().await?;
+
+        let mut manifest: Self = quick_xml::de::from_str(&text)?;
+
+        if let Some(v) = headers.get(HeaderName::from_static("x-fb-video-broadcast-ended")) {
+            if v.to_str()? == "1"  {
+                manifest.finished = true;
+            }
+        }
+
+        Ok(manifest)
     }
 
     pub fn best_media(&self) -> (&Representation, &Representation) {
@@ -81,5 +100,24 @@ impl Mpd {
             }
         }
         (ret.0.unwrap(), ret.1.unwrap())
+    }
+}
+
+#[derive(PartialEq, Eq, Hash, Clone, Debug)]
+pub enum MediaType {
+    Video,
+    Audio,
+    Unknown,
+}
+
+impl Representation {
+    pub fn media_type(&self) -> MediaType {
+        if self.mime_type.starts_with("video/") {
+            MediaType::Video
+        } else if self.mime_type.starts_with("audio/") {
+            MediaType::Audio
+        } else {
+            MediaType::Unknown
+        }
     }
 }

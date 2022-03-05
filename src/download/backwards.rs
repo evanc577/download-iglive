@@ -1,41 +1,54 @@
 use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
+use std::sync::Arc;
 
+use anyhow::Result;
+use futures::future;
 use indicatif::ProgressBar;
 use reqwest::Url;
+use tokio::sync::Mutex;
 
 use super::download_file;
+use crate::error::IgtvError;
 use crate::mpd::Representation;
+use crate::state::State;
+
+pub async fn download_reps_backwards(
+    state: Arc<Mutex<State>>,
+    url_base: &Url,
+    reps: impl IntoIterator<Item = (&Representation, &ProgressBar)>,
+    start_frame: usize,
+    dir: impl AsRef<Path> + Send,
+) -> Result<()> {
+    let futures: Vec<_> = reps
+        .into_iter()
+        .map(|(rep, pb)| {
+            download_backwards(state.clone(), url_base, rep, start_frame, dir.as_ref(), pb)
+        })
+        .collect();
+    future::join_all(futures)
+        .await
+        .into_iter()
+        .collect::<Result<_>>()?;
+    Ok(())
+}
 
 /// Download past segments
 ///
 /// Since Instagram only returns the latest segments, we need to guess the segments numbers to
 /// access past segments. This function uses an adaptive guessing method that tries the most common
 /// time deltas before brute forcing all other deltas.
-pub async fn download_backwards(
+async fn download_backwards(
+    state: Arc<Mutex<State>>,
     url_base: &Url,
     rep: &Representation,
+    start_frame: usize,
     dir: impl AsRef<Path>,
     pb: &ProgressBar,
-) {
-    // Generate initial delta guesses
-    let mut seed: Vec<_> = rep
-        .segment_template
-        .segment_timeline
-        .segments
-        .iter()
-        .map(|s| s.d as isize)
-        .collect();
-    for x in 1..=19 {
-        seed.insert(0, x * 100);
-        seed.insert(0, x * 100 + 33);
-        seed.insert(0, x * 100 + 66);
-    }
-    seed.insert(0, 2000);
-    let mut times = BTreeMap::new();
-    for &d in &seed {
-        *times.entry(d).or_insert(0) += 1;
-    }
+) -> Result<()> {
+    let media_type = rep.media_type();
+
+    let mut deltas = state.lock().await.deltas[&media_type].clone();
 
     // Get latest time
     let first_t = rep
@@ -49,10 +62,15 @@ pub async fn download_backwards(
         .t as isize;
     let mut latest_t = first_t;
 
-    // Try downloading segments until the first one is rached
+    // Try downloading segments until the first one is reached
     'outer: loop {
+        if latest_t <= start_frame as isize {
+            // If reached first frame, finish successfully
+            return Ok(());
+        }
+
         // Regenerate seed
-        let mut v = Vec::from_iter(times.clone());
+        let mut v = Vec::from_iter(deltas.clone());
         v.sort_by(|&(_, a), &(_, b)| b.cmp(&a));
         let new_seed: Vec<_> = v.iter().map(|(d, _)| *d).collect();
 
@@ -67,27 +85,34 @@ pub async fn download_backwards(
             pb.tick();
 
             // Try to download segment
-            let url = url_base
-                .join(
-                    &rep.segment_template
-                        .media_path
-                        .replace("$Time$", &t.to_string()),
-                )
-                .unwrap();
-            let filename = dir
-                .as_ref()
-                .join(url.path_segments().unwrap().rev().next().unwrap());
-            match download_file(&url, filename).await {
-                Ok(()) => {
-                    // If file exists, continue onto next segment
-                    latest_t = t;
-                    *times.entry(x).or_insert(0) += 1;
-                    continue 'outer;
-                }
-                Err(()) => (),
+            let url = url_base.join(
+                &rep.segment_template
+                    .media_path
+                    .replace("$Time$", &t.to_string()),
+            )?;
+            let filename = dir.as_ref().join(
+                url.path_segments()
+                    .ok_or(IgtvError::InvalidUrl)?
+                    .rev()
+                    .next()
+                    .ok_or(IgtvError::InvalidUrl)?,
+            );
+            if (download_file(&url, filename).await).is_ok() {
+                // Segment exists, continue onto next segment
+                latest_t = t;
+                *deltas.entry(x).or_insert(0) += 1;
+                *state
+                    .lock()
+                    .await
+                    .deltas
+                    .get_mut(&media_type)
+                    .unwrap()
+                    .entry(x)
+                    .or_insert(0) += 1;
+                continue 'outer;
             }
         }
-        return;
+        return Ok(());
     }
 }
 
