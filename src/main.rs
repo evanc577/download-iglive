@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
-use igtv_downloader::download::download;
+use igtv_downloader::download::{download, DownloadConfig, DownloadSegments};
 use igtv_downloader::merge::merge;
 
 /// Download Instagram live streams (IGTV), including past segments
@@ -30,6 +30,10 @@ struct Download {
     /// Don't merge into one video file after download
     #[clap(short, long)]
     no_merge: bool,
+
+    /// Don't download past segments
+    #[clap(short, long)]
+    live_only: bool,
 }
 
 /// Merge an already downloaded live stream into one file
@@ -44,7 +48,21 @@ async fn main() {
     let args = Args::parse();
     match args.command {
         Command::Download(d) => {
-            let output_dir = download(&d.mpd_url, d.output).await.unwrap();
+            // Config
+            let segments = if d.live_only {
+                DownloadSegments::LIVE
+            } else {
+                DownloadSegments::all()
+            };
+            let config = DownloadConfig {
+                dir: d.output,
+                segments,
+            };
+
+            // Download live stream
+            let output_dir = download(&d.mpd_url, config).await.unwrap();
+
+            // Merge
             if !d.no_merge {
                 merge(output_dir).unwrap();
             }

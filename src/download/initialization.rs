@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use futures::future;
+use indicatif::ProgressBar;
 use reqwest::Url;
 use tokio::sync::Mutex;
 
@@ -16,7 +17,12 @@ pub async fn download_reps_init(
     url_base: &Url,
     reps: impl IntoIterator<Item = &Representation>,
     dir: impl AsRef<Path> + Send,
+    pb: Option<ProgressBar>,
 ) -> Result<()> {
+    if let Some(pb) = pb.as_ref() {
+        pb.set_message("Downloading");
+    }
+
     let futures: Vec<_> = reps
         .into_iter()
         .map(|rep| download_init(state.clone(), url_base, rep, dir.as_ref()))
@@ -25,6 +31,11 @@ pub async fn download_reps_init(
         .await
         .into_iter()
         .collect::<Result<_>>()?;
+
+    if let Some(pb) = pb.as_ref() {
+        pb.finish_with_message("Finished");
+    }
+
     Ok(())
 }
 

@@ -16,7 +16,7 @@ pub async fn download_forwards(
     state: Arc<Mutex<State>>,
     url_base: &Url,
     dir: impl AsRef<Path> + Send,
-    pb: &ProgressBar,
+    pb: Option<ProgressBar>,
 ) -> Result<()> {
     // Set up 2 second interval
     let mut interval = time::interval(Duration::from_secs(2));
@@ -41,17 +41,19 @@ pub async fn download_forwards(
             .collect::<Result<_>>()?;
 
         // Update progress bar
-        let (latest_video_t, latest_audio_t) = {
-            let segs = &state.lock().await.downloaded_segs;
-            let latest_video_t = *segs[&MediaType::Video].iter().max().unwrap();
-            let latest_audio_t = *segs[&MediaType::Audio].iter().max().unwrap();
-            (latest_video_t, latest_audio_t)
-        };
-        pb.set_message(format!(
-            "Downloaded video segment {}, audio segment {}",
-            latest_video_t, latest_audio_t
-        ));
-        pb.tick();
+        if let Some(pb) = pb.as_ref() {
+            let (latest_video_t, latest_audio_t) = {
+                let segs = &state.lock().await.downloaded_segs;
+                let latest_video_t = *segs[&MediaType::Video].iter().max().unwrap();
+                let latest_audio_t = *segs[&MediaType::Audio].iter().max().unwrap();
+                (latest_video_t, latest_audio_t)
+            };
+            pb.set_message(format!(
+                "Downloaded video segment {}, audio segment {}",
+                latest_video_t, latest_audio_t
+            ));
+            pb.tick();
+        }
 
         // Finish if stream ended
         if manifest.finished {
@@ -59,7 +61,9 @@ pub async fn download_forwards(
         }
     };
 
-    pb.finish_with_message("Finished");
+    if let Some(pb) = pb {
+        pb.finish_with_message("Finished");
+    }
 
     ret
 }

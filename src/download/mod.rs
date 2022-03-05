@@ -3,22 +3,47 @@ mod forwards;
 mod initialization;
 
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{anyhow, Result};
-use futures::future;
+use bitflags::bitflags;
+use futures::{future, Future};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use reqwest::{IntoUrl, Url};
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 
+use self::backwards::download_reps_backwards;
 use self::forwards::download_forwards;
 use self::initialization::download_reps_init;
-use crate::download::backwards::download_reps_backwards;
 use crate::error::IgtvError;
 use crate::mpd::{Mpd, Representation};
 use crate::state::State;
+
+/// Options for download
+#[derive(Clone, Debug)]
+pub struct DownloadConfig {
+    /// Directory to place downloaded segments.
+    /// If `None`, auto generate directory based on live stream ID.
+    pub dir: Option<PathBuf>,
+
+    /// Choose whether to download live segments or past segments.
+    pub segments: DownloadSegments,
+}
+
+bitflags! {
+    /// Types of segments to download
+    pub struct DownloadSegments: u32 {
+        /// Download live segments.
+        const LIVE = 0b00000001;
+
+        /// Download past segments.
+        const PAST = 0b00000010;
+    }
+}
 
 /// Download an IGTV stream.
 /// Returns the download output path.
@@ -26,17 +51,15 @@ use crate::state::State;
 /// # Arguments
 ///
 /// * `mpd_url` - Full URL of live stream's .mpd manifest.
-/// * `dir` - Directory to place downloaded segments. If `None` is given, auto generate directory
-/// based on live stream ID.
-pub async fn download(mpd_url: impl IntoUrl, dir: Option<impl AsRef<Path>>) -> Result<PathBuf> {
+pub async fn download(mpd_url: impl IntoUrl, config: DownloadConfig) -> Result<PathBuf> {
     // Download manifest
     let url_base = mpd_url.into_url()?;
     let manifest = Mpd::download_from_url(url_base.clone()).await?;
     let (video_rep, audio_rep) = manifest.best_media();
 
     // Create directory
-    let base_dir_name: PathBuf = if let Some(d) = dir {
-        d.as_ref().into()
+    let base_dir_name: PathBuf = if let Some(d) = config.dir {
+        d
     } else {
         manifest.id.clone().into()
     };
@@ -46,43 +69,75 @@ pub async fn download(mpd_url: impl IntoUrl, dir: Option<impl AsRef<Path>>) -> R
     // Create state
     let state = Arc::new(Mutex::new(State::new()));
 
-    // Download initialization
-    println!("Downloading initialization");
-    download_reps_init(state.clone(), &url_base, [video_rep, audio_rep], &dir_name).await?;
-
-    // Download current rep
-    println!("Downloading current segments");
-    download_reps(state.clone(), &url_base, [video_rep, audio_rep], &dir_name).await?;
-
-    println!("Downloading past and live segments");
-
-    // Progressbar
+    // Progress bar
     let m = MultiProgress::new();
     let spinner_style =
         ProgressStyle::with_template("{prefix:.bold.fg.green} {spinner} {wide_msg}")?;
-    let pb_video = m.add(ProgressBar::new_spinner());
-    pb_video.set_style(spinner_style.clone());
-    pb_video.set_prefix("Past video:");
-    let pb_audio = m.add(ProgressBar::new_spinner());
-    pb_audio.set_style(spinner_style.clone());
-    pb_audio.set_prefix("Past audio:");
-    let pb_forwards = m.add(ProgressBar::new_spinner());
-    pb_forwards.set_style(spinner_style.clone());
-    pb_forwards.set_prefix("      Live:");
 
-    // Download backwards
-    let (result_backwards, result_forwards) = tokio::join!(
-        download_reps_backwards(
+    // Download initialization
+    let pb_init = m.add(ProgressBar::new_spinner());
+    pb_init.enable_steady_tick(Duration::from_millis(500));
+    pb_init.set_style(spinner_style.clone());
+    pb_init.set_prefix("      Init");
+    download_reps_init(
+        state.clone(),
+        &url_base,
+        [video_rep, audio_rep],
+        &dir_name,
+        Some(pb_init),
+    )
+    .await?;
+
+    // Download current rep
+    let pb_current = m.add(ProgressBar::new_spinner());
+    pb_current.enable_steady_tick(Duration::from_millis(500));
+    pb_current.set_style(spinner_style.clone());
+    pb_current.set_prefix("   Current");
+    download_reps(state.clone(), &url_base, [video_rep, audio_rep], &dir_name, Some(pb_current)).await?;
+
+    let pb_forwards;
+    let pb_video;
+    let pb_audio;
+
+    // Download past and live segments
+    let mut futures: Vec<Pin<Box<dyn Future<Output = Result<()>>>>> = vec![];
+    if config.segments.contains(DownloadSegments::LIVE) {
+        // Download live segments
+        let pb_forwards_tmp = m.add(ProgressBar::new_spinner());
+        pb_forwards_tmp.set_style(spinner_style.clone());
+        pb_forwards_tmp.set_prefix("      Live");
+        pb_forwards = Some(pb_forwards_tmp);
+
+        futures.push(Box::pin(download_forwards(
             state.clone(),
             &url_base,
-            [(video_rep, &pb_video), (audio_rep, &pb_audio)],
+            &dir_name,
+            pb_forwards,
+        )));
+    }
+    if config.segments.contains(DownloadSegments::PAST) {
+        // Download past segments
+        let pb_video_tmp = m.add(ProgressBar::new_spinner());
+        pb_video_tmp.set_style(spinner_style.clone());
+        pb_video_tmp.set_prefix("Past video");
+        pb_video = Some(pb_video_tmp);
+        let pb_audio_tmp = m.add(ProgressBar::new_spinner());
+        pb_audio_tmp.set_style(spinner_style.clone());
+        pb_audio_tmp.set_prefix("Past audio");
+        pb_audio = Some(pb_audio_tmp);
+
+        futures.push(Box::pin(download_reps_backwards(
+            state.clone(),
+            &url_base,
+            [(video_rep, pb_video), (audio_rep, pb_audio)],
             manifest.start_frame,
             &dir_name,
-        ),
-        download_forwards(state.clone(), &url_base, &dir_name, &pb_forwards),
-    );
-    result_backwards?;
-    result_forwards?;
+        )));
+    }
+    future::join_all(futures)
+        .await
+        .into_iter()
+        .collect::<Result<_>>()?;
 
     Ok(base_dir_name)
 }
@@ -92,7 +147,12 @@ async fn download_reps(
     url_base: &Url,
     reps: impl IntoIterator<Item = &Representation>,
     dir: impl AsRef<Path> + Send,
+    pb: Option<ProgressBar>,
 ) -> Result<()> {
+    if let Some(pb) = pb.as_ref() {
+        pb.set_message("Downloading");
+    }
+
     let futures: Vec<_> = reps
         .into_iter()
         .map(|rep| download_rep(state.clone(), rep, url_base, dir.as_ref()))
@@ -101,6 +161,11 @@ async fn download_reps(
         .await
         .into_iter()
         .collect::<Result<_>>()?;
+
+    if let Some(pb) = pb.as_ref() {
+        pb.finish_with_message("Finished");
+    }
+
     Ok(())
 }
 

@@ -16,7 +16,7 @@ use crate::state::State;
 pub async fn download_reps_backwards(
     state: Arc<Mutex<State>>,
     url_base: &Url,
-    reps: impl IntoIterator<Item = (&Representation, &ProgressBar)>,
+    reps: impl IntoIterator<Item = (&Representation, Option<ProgressBar>)>,
     start_frame: usize,
     dir: impl AsRef<Path> + Send,
 ) -> Result<()> {
@@ -44,7 +44,7 @@ async fn download_backwards(
     rep: &Representation,
     start_frame: usize,
     dir: impl AsRef<Path>,
-    pb: &ProgressBar,
+    pb: Option<ProgressBar>,
 ) -> Result<()> {
     let media_type = rep.media_type();
 
@@ -61,7 +61,9 @@ async fn download_backwards(
     'outer: loop {
         if latest_t <= start_frame as isize {
             // If reached first frame, finish successfully
-            pb.finish_with_message("Finished");
+            if let Some(pb) = pb.as_ref() {
+                pb.finish_with_message("Finished");
+            }
             return Ok(());
         }
 
@@ -76,9 +78,11 @@ async fn download_backwards(
                 continue;
             }
 
-            // Update progress bar
-            pb.set_message(format!("Downloaded segment {}, checking {}", latest_t, t));
-            pb.tick();
+            if let Some(pb) = pb.as_ref() {
+                // Update progress bar
+                pb.set_message(format!("Downloaded segment {}, checking {}", latest_t, t));
+                pb.tick();
+            }
 
             // Try to download segment
             let url = rep.download_url(url_base, t)?;
