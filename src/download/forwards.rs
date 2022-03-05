@@ -27,7 +27,7 @@ pub async fn download_forwards(
         interval.tick().await;
 
         // Download manifest
-        let manifest = Mpd::from_url(url_base).await?;
+        let manifest = Mpd::download_from_url(url_base).await?;
         let (video_rep, audio_rep) = manifest.best_media();
 
         // Download reps

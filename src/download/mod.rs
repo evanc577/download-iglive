@@ -31,7 +31,7 @@ use crate::state::State;
 pub async fn download(mpd_url: impl IntoUrl, dir: Option<impl AsRef<Path>>) -> Result<PathBuf> {
     // Download manifest
     let url_base = mpd_url.into_url()?;
-    let manifest = Mpd::from_url(url_base.clone()).await?;
+    let manifest = Mpd::download_from_url(url_base.clone()).await?;
     let (video_rep, audio_rep) = manifest.best_media();
 
     // Create directory

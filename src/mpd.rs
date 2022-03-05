@@ -69,7 +69,7 @@ pub struct Segment {
 }
 
 impl Mpd {
-    pub async fn from_url(url: impl AsRef<str>) -> Result<Self> {
+    pub async fn download_from_url(url: impl AsRef<str>) -> Result<Self> {
         let resp = reqwest::get(url.as_ref()).await?;
         let headers = resp.headers().clone();
         let text = resp.text().await?;
