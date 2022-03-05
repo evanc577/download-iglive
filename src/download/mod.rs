@@ -8,7 +8,7 @@ use std::sync::Arc;
 use anyhow::{anyhow, Result};
 use futures::future;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use reqwest::Url;
+use reqwest::{IntoUrl, Url};
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
@@ -20,70 +20,74 @@ use crate::error::IgtvError;
 use crate::mpd::{Mpd, Representation};
 use crate::state::State;
 
-pub struct Downloader;
+/// Download an IGTV stream.
+/// Returns the download output path.
+///
+/// # Arguments
+///
+/// * `mpd_url` - Full URL of live stream's .mpd manifest.
+/// * `dir` - Directory to place downloaded segments. If `None` is given, auto generate directory
+/// based on live stream ID.
+pub async fn download(mpd_url: impl IntoUrl, dir: Option<impl AsRef<Path>>) -> Result<PathBuf> {
+    // Download manifest
+    let url_base = mpd_url.into_url()?;
+    let manifest = Mpd::from_url(url_base.clone()).await?;
+    let (video_rep, audio_rep) = manifest.best_media();
 
-impl Downloader {
-    pub async fn download(mpd_url: &str, dir: Option<impl AsRef<Path>>) -> Result<PathBuf> {
-        // Download manifest
-        let manifest = Mpd::from_url(mpd_url).await?;
-        let (video_rep, audio_rep) = manifest.best_media();
-        let url_base = Url::parse(mpd_url)?;
+    // Create directory
+    let base_dir_name: PathBuf = if let Some(d) = dir {
+        d.as_ref().into()
+    } else {
+        manifest.id.clone().into()
+    };
+    let dir_name = base_dir_name.join("segments");
+    fs::create_dir_all(&dir_name).await?;
 
-        // Create directory
-        let base_dir_name: PathBuf = if let Some(d) = dir {
-            d.as_ref().into()
-        } else {
-            manifest.id.clone().into()
-        };
-        let dir_name = base_dir_name.join("segments");
-        fs::create_dir_all(&dir_name).await?;
+    // Create state
+    let state = Arc::new(Mutex::new(State::new()));
 
-        // Create state
-        let state = Arc::new(Mutex::new(State::new()));
+    // Download initialization
+    println!("Downloading initialization");
+    download_reps_init(state.clone(), &url_base, [video_rep, audio_rep], &dir_name).await?;
 
-        // Download initialization
-        println!("Downloading initialization");
-        download_reps_init(state.clone(), &url_base, [video_rep, audio_rep], &dir_name).await?;
+    // Download current rep
+    println!("Downloading current segments");
+    download_reps(state.clone(), &url_base, [video_rep, audio_rep], &dir_name).await?;
 
-        // Download current rep
-        println!("Downloading current segments");
-        download_reps(state.clone(), &url_base, [video_rep, audio_rep], &dir_name).await?;
+    println!("Downloading past and live segments");
 
-        println!("Downloading past and live segments");
+    // Progressbar
+    let m = MultiProgress::new();
+    let spinner_style =
+        ProgressStyle::with_template("{prefix:.bold.fg.green} {spinner} {wide_msg}")?;
+    let pb_video = m.add(ProgressBar::new_spinner());
+    pb_video.set_style(spinner_style.clone());
+    pb_video.set_prefix("Past video:");
+    let pb_audio = m.add(ProgressBar::new_spinner());
+    pb_audio.set_style(spinner_style.clone());
+    pb_audio.set_prefix("Past audio:");
+    let pb_forwards = m.add(ProgressBar::new_spinner());
+    pb_forwards.set_style(spinner_style.clone());
+    pb_forwards.set_prefix("      Live:");
 
-        // Progressbar
-        let m = MultiProgress::new();
-        let spinner_style =
-            ProgressStyle::with_template("{prefix:.bold.fg.green} {spinner} {wide_msg}")?;
-        let pb_video = m.add(ProgressBar::new_spinner());
-        pb_video.set_style(spinner_style.clone());
-        pb_video.set_prefix("Past video:");
-        let pb_audio = m.add(ProgressBar::new_spinner());
-        pb_audio.set_style(spinner_style.clone());
-        pb_audio.set_prefix("Past audio:");
-        let pb_forwards = m.add(ProgressBar::new_spinner());
-        pb_forwards.set_style(spinner_style.clone());
-        pb_forwards.set_prefix("      Live:");
+    // Download backwards
+    let (result_backwards, result_forwards) = tokio::join!(
+        download_reps_backwards(
+            state.clone(),
+            &url_base,
+            [(video_rep, &pb_video), (audio_rep, &pb_audio)],
+            manifest.start_frame,
+            &dir_name,
+        ),
+        download_forwards(state.clone(), &url_base, &dir_name, &pb_forwards),
+    );
+    result_backwards?;
+    result_forwards?;
 
-        // Download backwards
-        let (result_backwards, result_forwards) = tokio::join!(
-            download_reps_backwards(
-                state.clone(),
-                &url_base,
-                [(video_rep, &pb_video), (audio_rep, &pb_audio)],
-                manifest.start_frame,
-                &dir_name,
-            ),
-            download_forwards(state.clone(), &url_base, &dir_name, &pb_forwards),
-        );
-        result_backwards?;
-        result_forwards?;
-
-        Ok(base_dir_name)
-    }
+    Ok(base_dir_name)
 }
 
-pub async fn download_reps(
+async fn download_reps(
     state: Arc<Mutex<State>>,
     url_base: &Url,
     reps: impl IntoIterator<Item = &Representation>,

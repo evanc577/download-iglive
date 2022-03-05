@@ -1,15 +1,8 @@
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
-use merge::merge;
-
-use crate::download::Downloader;
-
-mod download;
-mod error;
-mod mpd;
-mod state;
-mod merge;
+use igtv_downloader::download::download;
+use igtv_downloader::merge::merge;
 
 /// Download Instagram live streams (IGTV), including past segments
 #[derive(Parser, Debug)]
@@ -25,22 +18,22 @@ enum Command {
 }
 
 /// Download a live stream
-#[derive(Parser, Debug,)]
+#[derive(Parser, Debug)]
 struct Download {
-        /// URL of .mpd file
-        mpd_url: String,
+    /// URL of .mpd file
+    mpd_url: String,
 
-        /// Output directory
-        #[clap(short, long)]
-        output: Option<PathBuf>,
+    /// Output directory
+    #[clap(short, long)]
+    output: Option<PathBuf>,
 
-        /// Don't merge into one video file after download
-        #[clap(short, long)]
-        no_merge: bool,
+    /// Don't merge into one video file after download
+    #[clap(short, long)]
+    no_merge: bool,
 }
 
 /// Merge an already downloaded live stream into one file
-#[derive(Parser, Debug,)]
+#[derive(Parser, Debug)]
 struct Merge {
     /// Directory to merge
     directory: PathBuf,
@@ -51,7 +44,7 @@ async fn main() {
     let args = Args::parse();
     match args.command {
         Command::Download(d) => {
-            let output_dir = Downloader::download(&d.mpd_url, d.output).await.unwrap();
+            let output_dir = download(&d.mpd_url, d.output).await.unwrap();
             if !d.no_merge {
                 merge(output_dir).unwrap();
             }

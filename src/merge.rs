@@ -7,6 +7,15 @@ use anyhow::Result;
 
 use crate::error::IgtvError;
 
+/// Merge video and audio segments downloaded by [download][crate::download::download] into a
+/// single `.mp4` video file.
+/// `ffmpeg` is required in `$PATH`.
+///
+/// The output file will be placed in `dir`.
+///
+/// # Arguments
+///
+/// `dir` - Directory containing downloaded video and audio segments.
 pub fn merge(dir: impl AsRef<Path>) -> Result<()> {
     let mut video_segments = vec![];
     let mut audio_segments = vec![];
