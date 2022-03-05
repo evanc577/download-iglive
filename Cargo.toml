@@ -6,8 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+alphanumeric-sort = "1.4"
 anyhow = "1.0"
-crossbeam = "0.8"
+clap = { version = "3.1", features = [ "derive" ] }
 futures = "0.3"
 indicatif = "0.17.0-rc.2"
 quick-xml = { version = "0.22", features = [ "serialize" ] }

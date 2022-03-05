@@ -2,7 +2,7 @@ mod backwards;
 mod forwards;
 mod initialization;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
@@ -23,26 +23,31 @@ use crate::state::State;
 pub struct Downloader;
 
 impl Downloader {
-    pub async fn download(mpd_url: &str) -> Result<()> {
+    pub async fn download(mpd_url: &str, dir: Option<impl AsRef<Path>>) -> Result<PathBuf> {
         // Download manifest
         let manifest = Mpd::from_url(mpd_url).await?;
         let (video_rep, audio_rep) = manifest.best_media();
         let url_base = Url::parse(mpd_url)?;
 
         // Create directory
-        let dir_name = &manifest.id;
-        fs::create_dir_all(dir_name).await?;
+        let base_dir_name: PathBuf = if let Some(d) = dir {
+            d.as_ref().into()
+        } else {
+            manifest.id.clone().into()
+        };
+        let dir_name = base_dir_name.join("segments");
+        fs::create_dir_all(&dir_name).await?;
 
         // Create state
         let state = Arc::new(Mutex::new(State::new()));
 
         // Download initialization
         println!("Downloading initialization");
-        download_reps_init(state.clone(), &url_base, [video_rep, audio_rep], dir_name).await?;
+        download_reps_init(state.clone(), &url_base, [video_rep, audio_rep], &dir_name).await?;
 
         // Download current rep
         println!("Downloading current segments");
-        download_reps(state.clone(), &url_base, [video_rep, audio_rep], dir_name).await?;
+        download_reps(state.clone(), &url_base, [video_rep, audio_rep], &dir_name).await?;
 
         println!("Downloading past and live segments");
 
@@ -67,14 +72,14 @@ impl Downloader {
                 &url_base,
                 [(video_rep, &pb_video), (audio_rep, &pb_audio)],
                 manifest.start_frame,
-                dir_name,
+                &dir_name,
             ),
-            download_forwards(state.clone(), &url_base, dir_name, &pb_forwards),
+            download_forwards(state.clone(), &url_base, &dir_name, &pb_forwards),
         );
         result_backwards?;
         result_forwards?;
 
-        Ok(())
+        Ok(base_dir_name)
     }
 }
 

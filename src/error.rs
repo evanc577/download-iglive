@@ -4,4 +4,8 @@ use thiserror::Error;
 pub enum IgtvError {
     #[error("Invalid URL")]
     InvalidUrl,
+    #[error("Missing init")]
+    MissingInit,
+    #[error("ffmpeg process failed")]
+    FfmpegFail,
 }
