@@ -4,7 +4,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use futures::future;
 use indicatif::ProgressBar;
-use reqwest::Url;
+use reqwest::{Url, Client};
 use tokio::sync::Mutex;
 
 use super::download_file;
@@ -14,6 +14,7 @@ use crate::state::State;
 
 pub async fn download_reps_init(
     state: Arc<Mutex<State>>,
+    client: &Client,
     url_base: &Url,
     reps: impl IntoIterator<Item = &Representation>,
     dir: impl AsRef<Path> + Send,
@@ -25,7 +26,7 @@ pub async fn download_reps_init(
 
     let futures: Vec<_> = reps
         .into_iter()
-        .map(|rep| download_init(state.clone(), url_base, rep, dir.as_ref()))
+        .map(|rep| download_init(state.clone(), client, url_base, rep, dir.as_ref()))
         .collect();
     future::join_all(futures)
         .await
@@ -41,6 +42,7 @@ pub async fn download_reps_init(
 
 async fn download_init(
     state: Arc<Mutex<State>>,
+    client: &Client,
     url_base: &Url,
     rep: &Representation,
     dir: impl AsRef<Path>,
@@ -58,7 +60,7 @@ async fn download_init(
             .next()
             .ok_or(IgLiveError::InvalidUrl)?,
     );
-    download_file(&url, filename).await?;
+    download_file(client, &url, filename).await?;
 
     state.lock().await.downloaded_init.insert(media_type, true);
 

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use reqwest::header::HeaderName;
-use reqwest::Url;
+use reqwest::{Client, Url};
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug)]
@@ -69,8 +69,8 @@ pub struct Segment {
 }
 
 impl Mpd {
-    pub async fn download_from_url(url: impl AsRef<str>) -> Result<Self> {
-        let resp = reqwest::get(url.as_ref()).await?;
+    pub async fn download_from_url(client: &Client, url: impl AsRef<str>) -> Result<Self> {
+        let resp = client.get(url.as_ref()).send().await?;
         let headers = resp.headers().clone();
         let text = resp.text().await?;
 

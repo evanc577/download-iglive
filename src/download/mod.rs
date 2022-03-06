@@ -11,7 +11,7 @@ use anyhow::{anyhow, Result};
 use bitflags::bitflags;
 use futures::{future, Future};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use reqwest::{IntoUrl, Url};
+use reqwest::{Client, IntoUrl, StatusCode, Url};
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
@@ -52,9 +52,12 @@ bitflags! {
 ///
 /// * `mpd_url` - Full URL of live stream's .mpd manifest.
 pub async fn download(mpd_url: impl IntoUrl, config: DownloadConfig) -> Result<PathBuf> {
+    // Reqwest client
+    let client = Client::new();
+
     // Download manifest
     let url_base = mpd_url.into_url()?;
-    let manifest = Mpd::download_from_url(url_base.clone()).await?;
+    let manifest = Mpd::download_from_url(&client, url_base.clone()).await?;
     let (video_rep, audio_rep) = manifest.best_media();
 
     // Create directory
@@ -81,6 +84,7 @@ pub async fn download(mpd_url: impl IntoUrl, config: DownloadConfig) -> Result<P
     pb_init.set_prefix("      Init");
     download_reps_init(
         state.clone(),
+        &client,
         &url_base,
         [video_rep, audio_rep],
         &dir_name,
@@ -93,7 +97,15 @@ pub async fn download(mpd_url: impl IntoUrl, config: DownloadConfig) -> Result<P
     pb_current.enable_steady_tick(Duration::from_millis(500));
     pb_current.set_style(spinner_style.clone());
     pb_current.set_prefix("   Current");
-    download_reps(state.clone(), &url_base, [video_rep, audio_rep], &dir_name, Some(pb_current)).await?;
+    download_reps(
+        state.clone(),
+        &client,
+        &url_base,
+        [video_rep, audio_rep],
+        &dir_name,
+        Some(pb_current),
+    )
+    .await?;
 
     let pb_forwards;
     let pb_video;
@@ -110,6 +122,7 @@ pub async fn download(mpd_url: impl IntoUrl, config: DownloadConfig) -> Result<P
 
         futures.push(Box::pin(download_forwards(
             state.clone(),
+            &client,
             &url_base,
             &dir_name,
             pb_forwards,
@@ -128,6 +141,7 @@ pub async fn download(mpd_url: impl IntoUrl, config: DownloadConfig) -> Result<P
 
         futures.push(Box::pin(download_reps_backwards(
             state.clone(),
+            &client,
             &url_base,
             [(video_rep, pb_video), (audio_rep, pb_audio)],
             manifest.start_frame,
@@ -144,6 +158,7 @@ pub async fn download(mpd_url: impl IntoUrl, config: DownloadConfig) -> Result<P
 
 async fn download_reps(
     state: Arc<Mutex<State>>,
+    client: &Client,
     url_base: &Url,
     reps: impl IntoIterator<Item = &Representation>,
     dir: impl AsRef<Path> + Send,
@@ -155,7 +170,7 @@ async fn download_reps(
 
     let futures: Vec<_> = reps
         .into_iter()
-        .map(|rep| download_rep(state.clone(), rep, url_base, dir.as_ref()))
+        .map(|rep| download_rep(state.clone(), client, rep, url_base, dir.as_ref()))
         .collect();
     future::join_all(futures)
         .await
@@ -171,6 +186,7 @@ async fn download_reps(
 
 async fn download_rep(
     state: Arc<Mutex<State>>,
+    client: &Client,
     rep: &Representation,
     url_base: &Url,
     dir: impl AsRef<Path>,
@@ -196,7 +212,7 @@ async fn download_rep(
                 .next()
                 .ok_or(IgLiveError::InvalidUrl)?,
         );
-        download_file(&url, filename).await?;
+        download_file(client, &url, filename).await?;
 
         // Update state
         state
@@ -210,8 +226,11 @@ async fn download_rep(
     Ok(())
 }
 
-async fn download_file(url: &Url, path: impl AsRef<Path>) -> Result<()> {
-    let resp = reqwest::get(url.as_str()).await?;
+async fn download_file(client: &Client, url: &Url, path: impl AsRef<Path>) -> Result<()> {
+    let resp = client.get(url.as_str()).send().await?;
+    if resp.status() == StatusCode::NOT_FOUND {
+        return Err(IgLiveError::StatusNotFound.into());
+    }
     if !resp.status().is_success() {
         return Err(anyhow!("Failed to download {}", url.as_str()));
     }

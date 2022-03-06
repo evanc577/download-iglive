@@ -5,7 +5,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use futures::future;
 use indicatif::ProgressBar;
-use reqwest::Url;
+use reqwest::{Url, Client};
 use tokio::sync::Mutex;
 
 use super::download_file;
@@ -15,6 +15,7 @@ use crate::state::State;
 
 pub async fn download_reps_backwards(
     state: Arc<Mutex<State>>,
+    client: &Client,
     url_base: &Url,
     reps: impl IntoIterator<Item = (&Representation, Option<ProgressBar>)>,
     start_frame: usize,
@@ -23,7 +24,7 @@ pub async fn download_reps_backwards(
     let futures: Vec<_> = reps
         .into_iter()
         .map(|(rep, pb)| {
-            download_backwards(state.clone(), url_base, rep, start_frame, dir.as_ref(), pb)
+            download_backwards(state.clone(), client, url_base, rep, start_frame, dir.as_ref(), pb)
         })
         .collect();
     future::join_all(futures)
@@ -40,6 +41,7 @@ pub async fn download_reps_backwards(
 /// time deltas before brute forcing all other deltas.
 async fn download_backwards(
     state: Arc<Mutex<State>>,
+    client: &Client,
     url_base: &Url,
     rep: &Representation,
     start_frame: usize,
@@ -93,7 +95,7 @@ async fn download_backwards(
                     .next()
                     .ok_or(IgLiveError::InvalidUrl)?,
             );
-            if (download_file(&url, filename).await).is_ok() {
+            if (download_file(client, &url, filename).await).is_ok() {
                 // Segment exists, continue onto next segment
                 latest_t = t;
                 // Update local copy

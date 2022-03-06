@@ -4,7 +4,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use futures::future;
 use indicatif::ProgressBar;
-use reqwest::Url;
+use reqwest::{Url, Client};
 use tokio::sync::Mutex;
 use tokio::time::{self, Duration};
 
@@ -14,6 +14,7 @@ use crate::state::State;
 
 pub async fn download_forwards(
     state: Arc<Mutex<State>>,
+    client: &Client,
     url_base: &Url,
     dir: impl AsRef<Path> + Send,
     pb: Option<ProgressBar>,
@@ -27,13 +28,13 @@ pub async fn download_forwards(
         interval.tick().await;
 
         // Download manifest
-        let manifest = Mpd::download_from_url(url_base).await?;
+        let manifest = Mpd::download_from_url(client, url_base).await?;
         let (video_rep, audio_rep) = manifest.best_media();
 
         // Download reps
         let futures: Vec<_> = [video_rep, audio_rep]
             .into_iter()
-            .map(|rep| download_rep(state.clone(), rep, url_base, dir.as_ref()))
+            .map(|rep| download_rep(state.clone(), client, rep, url_base, dir.as_ref()))
             .collect();
         future::join_all(futures)
             .await
