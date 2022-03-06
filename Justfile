@@ -1,6 +1,6 @@
 windows_target := "x86_64-pc-windows-gnu"
 linux_target := "x86_64-unknown-linux-musl"
-bin_name := "igtv-downloader"
+bin_name := "download-iglive"
 output_dir := "bin"
 
 

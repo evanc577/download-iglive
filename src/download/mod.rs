@@ -19,7 +19,7 @@ use tokio::sync::Mutex;
 use self::backwards::download_reps_backwards;
 use self::forwards::download_forwards;
 use self::initialization::download_reps_init;
-use crate::error::IgtvError;
+use crate::error::IgLiveError;
 use crate::mpd::{Mpd, Representation};
 use crate::state::State;
 
@@ -45,7 +45,7 @@ bitflags! {
     }
 }
 
-/// Download an IGTV stream.
+/// Download an IG live stream.
 /// Returns the download output path.
 ///
 /// # Arguments
@@ -191,10 +191,10 @@ async fn download_rep(
         let url = rep.download_url(url_base, t)?;
         let filename = dir.as_ref().join(
             url.path_segments()
-                .ok_or(IgtvError::InvalidUrl)?
+                .ok_or(IgLiveError::InvalidUrl)?
                 .rev()
                 .next()
-                .ok_or(IgtvError::InvalidUrl)?,
+                .ok_or(IgLiveError::InvalidUrl)?,
         );
         download_file(&url, filename).await?;
 

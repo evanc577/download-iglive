@@ -5,7 +5,7 @@ use std::{fs, process};
 
 use anyhow::Result;
 
-use crate::error::IgtvError;
+use crate::error::IgLiveError;
 
 /// Merge video and audio segments downloaded by [download][crate::download::download] into a
 /// single `.mp4` video file.
@@ -45,8 +45,8 @@ pub fn merge(dir: impl AsRef<Path>) -> Result<()> {
     }
 
     // Check that init files exist
-    let video_init = video_init.ok_or(IgtvError::MissingInit)?;
-    let audio_init = audio_init.ok_or(IgtvError::MissingInit)?;
+    let video_init = video_init.ok_or(IgLiveError::MissingInit)?;
+    let audio_init = audio_init.ok_or(IgLiveError::MissingInit)?;
 
     // Sort segments
     video_segments.sort_by(|a, b| alphanumeric_sort::compare_path(a, b));
@@ -79,7 +79,7 @@ pub fn merge(dir: impl AsRef<Path>) -> Result<()> {
     let _ = fs::remove_file(audio_concat);
 
     if !output.status.success() {
-        Err(IgtvError::FfmpegFail.into())
+        Err(IgLiveError::FfmpegFail.into())
     } else {
         println!("Merged video written to {:?}", output_path);
         Ok(())

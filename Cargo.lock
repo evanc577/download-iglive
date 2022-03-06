@@ -113,6 +113,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "download-iglive"
+version = "0.1.2"
+dependencies = [
+ "alphanumeric-sort",
+ "anyhow",
+ "bitflags",
+ "clap",
+ "futures",
+ "indicatif",
+ "quick-xml",
+ "reqwest",
+ "serde",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "encode_unicode"
 version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -352,23 +369,6 @@ dependencies = [
  "matches",
  "unicode-bidi",
  "unicode-normalization",
-]
-
-[[package]]
-name = "igtv-downloader"
-version = "0.1.2"
-dependencies = [
- "alphanumeric-sort",
- "anyhow",
- "bitflags",
- "clap",
- "futures",
- "indicatif",
- "quick-xml",
- "reqwest",
- "serde",
- "thiserror",
- "tokio",
 ]
 
 [[package]]

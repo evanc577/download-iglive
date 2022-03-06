@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
-use igtv_downloader::download::{download, DownloadConfig, DownloadSegments};
-use igtv_downloader::merge::merge;
+use download_iglive::download::{download, DownloadConfig, DownloadSegments};
+use download_iglive::merge::merge;
 
-/// Download Instagram live streams (IGTV), including past segments
+/// Download Instagram live streams, including past segments
 #[derive(Parser, Debug)]
 struct Args {
     #[clap(subcommand)]

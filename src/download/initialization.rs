@@ -8,7 +8,7 @@ use reqwest::Url;
 use tokio::sync::Mutex;
 
 use super::download_file;
-use crate::error::IgtvError;
+use crate::error::IgLiveError;
 use crate::mpd::Representation;
 use crate::state::State;
 
@@ -53,10 +53,10 @@ async fn download_init(
     let url = url_base.join(&rep.segment_template.initialization_path)?;
     let filename = dir.as_ref().join(
         url.path_segments()
-            .ok_or(IgtvError::InvalidUrl)?
+            .ok_or(IgLiveError::InvalidUrl)?
             .rev()
             .next()
-            .ok_or(IgtvError::InvalidUrl)?,
+            .ok_or(IgLiveError::InvalidUrl)?,
     );
     download_file(&url, filename).await?;
 

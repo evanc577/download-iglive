@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum IgtvError {
+pub enum IgLiveError {
     #[error("Invalid URL")]
     InvalidUrl,
     #[error("Missing init")]

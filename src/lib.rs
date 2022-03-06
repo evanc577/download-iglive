@@ -1,8 +1,8 @@
 #![warn(missing_docs)]
 
-//! An experimental Instagram live stream (IGTV) downloader.
+//! An experimental Instagram live stream downloader.
 //!
-//! IGTV stream will be downloaded live while concurrently downloading past segments with an
+//! Instagram streams will be downloaded live while concurrently downloading past segments with an
 //! adaptive brute force method.
 //! This allows full live streams to be downloaded.
 //!
@@ -10,7 +10,7 @@
 //! However, a valid `.mpd` link must be provided, which may be impossible to get at that point if
 //! you do not have an existing link.
 
-/// IGTV segment downloader
+/// IG live segment downloader
 pub mod download;
 
 mod error;
