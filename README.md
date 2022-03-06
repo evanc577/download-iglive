@@ -14,3 +14,36 @@ Can download live streams from start.
 ```console
 $ ./download-iglive download 'https://url/to/manifest.mpd'
 ```
+## Examples
+
+#### Specify download directory
+
+```console
+$ ./download-iglive download -o path/to/download/directory 'https://url/to/manifest.mpd'
+```
+
+#### Only download live segments (don't scrape past segments)
+
+```console
+$ ./download-iglive download -l 'https://url/to/manifest.mpd'
+```
+
+#### Merge already-downloaded segments into one video file
+
+```console
+$ ./download-iglive merge path/to/download/directory
+```
+
+#### View help
+
+```console
+$ ./download-iglive -h
+```
+
+```console
+$ ./download-iglive download -h
+```
+
+```console
+$ ./download-iglive merge -h
+```
