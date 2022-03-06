@@ -5,7 +5,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use futures::future;
 use indicatif::ProgressBar;
-use reqwest::{Url, Client};
+use reqwest::{Client, Url};
 use tokio::sync::Mutex;
 
 use super::download_file;
@@ -24,7 +24,15 @@ pub async fn download_reps_backwards(
     let futures: Vec<_> = reps
         .into_iter()
         .map(|(rep, pb)| {
-            download_backwards(state.clone(), client, url_base, rep, start_frame, dir.as_ref(), pb)
+            download_backwards(
+                state.clone(),
+                client,
+                url_base,
+                rep,
+                start_frame,
+                dir.as_ref(),
+                pb,
+            )
         })
         .collect();
     future::join_all(futures)
@@ -95,21 +103,31 @@ async fn download_backwards(
                     .next()
                     .ok_or(IgLiveError::InvalidUrl)?,
             );
-            if (download_file(client, &url, filename).await).is_ok() {
-                // Segment exists, continue onto next segment
-                latest_t = t;
-                // Update local copy
-                *deltas.entry(x).or_insert(0) += 1;
-                // Update global copy
-                *state
-                    .lock()
-                    .await
-                    .deltas
-                    .get_mut(&media_type)
-                    .unwrap()
-                    .entry(x)
-                    .or_insert(0) += 1;
-                continue 'outer;
+            match download_file(client, &url, filename).await {
+                Ok(_) => {
+                    // Segment exists, continue onto next segment
+                    latest_t = t;
+                    // Update local copy
+                    *deltas.entry(x).or_insert(0) += 1;
+                    // Update global copy
+                    *state
+                        .lock()
+                        .await
+                        .deltas
+                        .get_mut(&media_type)
+                        .unwrap()
+                        .entry(x)
+                        .or_insert(0) += 1;
+                    continue 'outer;
+                }
+                Err(e) => {
+                    if let Some(e) = e.downcast_ref::<IgLiveError>() {
+                        if matches!(e, IgLiveError::StatusNotFound) {
+                            continue;
+                        }
+                    }
+                    eprintln!("Download failed: {:?}", e);
+                }
             }
         }
     }

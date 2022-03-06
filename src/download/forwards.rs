@@ -4,12 +4,12 @@ use std::sync::Arc;
 use anyhow::Result;
 use futures::future;
 use indicatif::ProgressBar;
-use reqwest::{Url, Client};
+use reqwest::{Client, Url};
 use tokio::sync::Mutex;
 use tokio::time::{self, Duration};
 
 use crate::download::download_rep;
-use crate::mpd::{MediaType, Mpd};
+use crate::mpd::{MediaType, Mpd, Representation};
 use crate::state::State;
 
 pub async fn download_forwards(
@@ -31,6 +31,14 @@ pub async fn download_forwards(
         let manifest = Mpd::download_from_url(client, url_base).await?;
         let (video_rep, audio_rep) = manifest.best_media();
 
+        // Find last segments downloaded
+        let (latest_video_t, latest_audio_t) = {
+            let segs = &state.lock().await.downloaded_segs;
+            let latest_video_t = *segs[&MediaType::Video].iter().max().unwrap();
+            let latest_audio_t = *segs[&MediaType::Audio].iter().max().unwrap();
+            (latest_video_t, latest_audio_t)
+        };
+
         // Download reps
         let futures: Vec<_> = [video_rep, audio_rep]
             .into_iter()
@@ -41,14 +49,11 @@ pub async fn download_forwards(
             .into_iter()
             .collect::<Result<_>>()?;
 
+        check_overlap(video_rep, latest_video_t);
+        check_overlap(audio_rep, latest_audio_t);
+
         // Update progress bar
         if let Some(pb) = pb.as_ref() {
-            let (latest_video_t, latest_audio_t) = {
-                let segs = &state.lock().await.downloaded_segs;
-                let latest_video_t = *segs[&MediaType::Video].iter().max().unwrap();
-                let latest_audio_t = *segs[&MediaType::Audio].iter().max().unwrap();
-                (latest_video_t, latest_audio_t)
-            };
             pb.set_message(format!(
                 "Downloaded video segment {}, audio segment {}",
                 latest_video_t, latest_audio_t
@@ -67,4 +72,16 @@ pub async fn download_forwards(
     }
 
     ret
+}
+
+fn check_overlap(rep: &Representation, latest_t: usize) {
+    if !rep
+        .segment_template
+        .segment_timeline
+        .segments
+        .iter()
+        .any(|s| s.t == latest_t)
+    {
+        eprintln!("Possible missed live segment!");
+    }
 }
