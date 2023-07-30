@@ -20,7 +20,7 @@ pub async fn download_forwards(
     pb: Option<ProgressBar>,
 ) -> Result<()> {
     // Set up 2 second interval
-    let mut interval = time::interval(Duration::from_secs(2));
+    let mut interval = time::interval(Duration::from_millis(1000));
     interval.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
 
     let ret = loop {

@@ -103,7 +103,7 @@ async fn download_backwards(
                     .next()
                     .ok_or(IgLiveError::InvalidUrl)?,
             );
-            match download_file(client, &url, filename).await {
+            match download_file(state.clone(), client, rep, &url, filename).await {
                 Ok(_) => {
                     // Segment exists, continue onto next segment
                     latest_t = t;

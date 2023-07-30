@@ -212,7 +212,7 @@ async fn download_rep(
                 .next()
                 .ok_or(IgLiveError::InvalidUrl)?,
         );
-        download_file(client, &url, filename).await?;
+        download_file(state.clone(), client, rep, &url, filename).await?;
 
         // Update state
         state
@@ -226,17 +226,28 @@ async fn download_rep(
     Ok(())
 }
 
-async fn download_file(client: &Client, url: &Url, path: impl AsRef<Path>) -> Result<()> {
+async fn download_file(
+    state: Arc<Mutex<State>>,
+    client: &Client,
+    rep: &Representation,
+    url: &Url,
+    path: impl AsRef<Path>,
+) -> Result<()> {
     let resp = client.get(url.as_str()).send().await?;
     if resp.status() == StatusCode::NOT_FOUND {
         return Err(IgLiveError::StatusNotFound.into());
     }
     if !resp.status().is_success() {
-        eprintln!("Received status code {}", resp.status().as_u16());
         return Err(anyhow!("Failed to download {}", url.as_str()));
     }
 
-    let mut buffer = fs::File::create(path).await?;
-    buffer.write_all(&resp.bytes().await?).await?;
+    let mut file_buffer = fs::File::create(path).await?;
+    file_buffer.write_all(state
+        .lock()
+        .await
+        .downloaded_init
+        .get(&rep.media_type())
+        .unwrap()).await?;
+    file_buffer.write_all(&resp.bytes().await?).await?;
     Ok(())
 }

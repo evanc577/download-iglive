@@ -19,8 +19,6 @@ use crate::error::IgLiveError;
 pub fn merge(dir: impl AsRef<Path>) -> Result<()> {
     let mut video_segments = vec![];
     let mut audio_segments = vec![];
-    let mut video_init = None;
-    let mut audio_init = None;
 
     println!("Merging video file");
 
@@ -33,20 +31,12 @@ pub fn merge(dir: impl AsRef<Path>) -> Result<()> {
         }
 
         let file_name = entry.file_name().to_string_lossy().to_string();
-        if file_name.ends_with("init.m4v") {
-            video_init = Some(entry.path());
-        } else if file_name.ends_with("init.m4a") {
-            audio_init = Some(entry.path());
-        } else if file_name.ends_with(".m4v") {
+        if file_name.ends_with(".m4v") {
             video_segments.push(entry.path());
         } else if file_name.ends_with(".m4a") {
             audio_segments.push(entry.path());
         }
     }
-
-    // Check that init files exist
-    let video_init = video_init.ok_or(IgLiveError::MissingInit)?;
-    let audio_init = audio_init.ok_or(IgLiveError::MissingInit)?;
 
     // Sort segments
     video_segments.sort_by(|a, b| alphanumeric_sort::compare_path(a, b));
@@ -61,8 +51,8 @@ pub fn merge(dir: impl AsRef<Path>) -> Result<()> {
         .to_string();
     let video_concat = dir.as_ref().join(file_name_base.clone() + "video.tmp");
     let audio_concat = dir.as_ref().join(file_name_base.clone() + "audio.tmp");
-    merge_segments(video_init, video_segments, &video_concat)?;
-    merge_segments(audio_init, audio_segments, &audio_concat)?;
+    merge_segments(video_segments, &video_concat)?;
+    merge_segments(audio_segments, &audio_concat)?;
 
     // Mux into final file
     let output_path = dir.as_ref().join(file_name_base + ".mp4");
@@ -87,14 +77,10 @@ pub fn merge(dir: impl AsRef<Path>) -> Result<()> {
 }
 
 fn merge_segments(
-    init: impl AsRef<Path>,
     segs: impl IntoIterator<Item = impl AsRef<Path>>,
     path: impl AsRef<Path>,
 ) -> Result<()> {
     let mut output = fs::File::create(path.as_ref())?;
-
-    // Write init
-    output.write_all(&fs::read(init)?)?;
 
     // Write segments
     for seg in segs.into_iter() {

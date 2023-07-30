@@ -1,13 +1,12 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use futures::future;
 use indicatif::ProgressBar;
-use reqwest::{Url, Client};
+use reqwest::{Url, Client, StatusCode};
 use tokio::sync::Mutex;
 
-use super::download_file;
 use crate::error::IgLiveError;
 use crate::mpd::Representation;
 use crate::state::State;
@@ -26,7 +25,7 @@ pub async fn download_reps_init(
 
     let futures: Vec<_> = reps
         .into_iter()
-        .map(|rep| download_init(state.clone(), client, url_base, rep, dir.as_ref()))
+        .map(|rep| download_init(state.clone(), client, url_base, rep))
         .collect();
     future::join_all(futures)
         .await
@@ -45,24 +44,25 @@ async fn download_init(
     client: &Client,
     url_base: &Url,
     rep: &Representation,
-    dir: impl AsRef<Path>,
 ) -> Result<()> {
     let media_type = rep.media_type();
-    if state.lock().await.downloaded_init[&media_type] {
+    if state.lock().await.downloaded_init.contains_key(&media_type) {
         return Ok(());
     }
 
     let url = url_base.join(&rep.segment_template.initialization_path)?;
-    let filename = dir.as_ref().join(
-        url.path_segments()
-            .ok_or(IgLiveError::InvalidUrl)?
-            .rev()
-            .next()
-            .ok_or(IgLiveError::InvalidUrl)?,
-    );
-    download_file(client, &url, filename).await?;
+    let resp = client.get(url.as_str()).send().await?;
+    if resp.status() == StatusCode::NOT_FOUND {
+        return Err(IgLiveError::StatusNotFound.into());
+    }
+    if !resp.status().is_success() {
+        eprintln!("Received status code {}", resp.status().as_u16());
+        return Err(anyhow!("Failed to download {}", url.as_str()));
+    }
 
-    state.lock().await.downloaded_init.insert(media_type, true);
+    let buffer: Vec<_> = resp.bytes().await?.into_iter().collect();
+
+    state.lock().await.downloaded_init.insert(media_type, buffer);
 
     Ok(())
 }

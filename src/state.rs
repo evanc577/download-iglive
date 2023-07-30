@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::mpd::MediaType;
 
 pub struct State {
-    pub downloaded_init: HashMap<MediaType, bool>,
+    pub downloaded_init: HashMap<MediaType, Vec<u8>>,
 
     pub downloaded_segs: HashMap<MediaType, HashSet<usize>>,
 
@@ -14,7 +14,7 @@ impl State {
     pub fn new() -> Self {
         let media_types = [MediaType::Video, MediaType::Audio];
 
-        let downloaded_init = media_types.iter().cloned().map(|t| (t, false)).collect();
+        let downloaded_init = HashMap::new();
         let downloaded_segs = media_types
             .iter()
             .cloned()
