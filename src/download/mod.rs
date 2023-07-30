@@ -37,6 +37,7 @@ pub struct DownloadConfig {
 
 bitflags! {
     /// Types of segments to download
+    #[derive(Clone, Debug)]
     pub struct DownloadSegments: u32 {
         /// Download live segments.
         const LIVE = 0b00000001;
