@@ -82,7 +82,7 @@ fn check_overlap(rep: &Representation, latest_t: usize, pb: &Option<ProgressBar>
         .iter()
         .any(|s| s.t == latest_t)
     {
-        let msg = "Possible missed live segment!";
+        let msg = format!("Possible missed live segment t={latest_t}");
         if let Some(pb) = pb.as_ref() {
             pb.println(msg);
         } else {
