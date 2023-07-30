@@ -82,9 +82,11 @@ async fn download_backwards(
         v.sort_by(|&(_, a), &(_, b)| b.cmp(&a));
         let new_seed: Vec<_> = v.iter().map(|(d, _)| *d).collect();
 
-        for x in OffsetRange::new(2000, new_seed) {
+        let mut lower_bound = 0;
+
+        for x in OffsetRange::new(10, new_seed) {
             let t = latest_t - x;
-            if t < 0 {
+            if t < lower_bound {
                 continue;
             }
 
@@ -103,7 +105,16 @@ async fn download_backwards(
                     .next()
                     .ok_or(IgLiveError::InvalidUrl)?,
             );
-            match download_file(state.clone(), client, rep, &url, filename).await {
+            match download_file(
+                state.clone(),
+                client,
+                rep.media_type(),
+                true,
+                &url,
+                filename,
+            )
+            .await
+            {
                 Ok(_) => {
                     // Segment exists, continue onto next segment
                     latest_t = t;
@@ -122,8 +133,14 @@ async fn download_backwards(
                 }
                 Err(e) => {
                     if let Some(e) = e.downcast_ref::<IgLiveError>() {
-                        if matches!(e, IgLiveError::StatusNotFound) {
-                            continue;
+                        match e {
+                            IgLiveError::StatusNotFound => continue,
+                            IgLiveError::PtsTooEarly => {
+                                eprintln!("PTS TOO EARLY!!!\n\n\n\n\n\n\n");
+                                lower_bound = t;
+                                continue;
+                            }
+                            _ => (),
                         }
                     }
                     eprintln!("Download failed: {:?}", e);

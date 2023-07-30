@@ -64,9 +64,9 @@ async fn main() {
 
             // Merge
             if !d.no_merge {
-                merge(output_dir).unwrap();
+                merge(output_dir).await.unwrap();
             }
         }
-        Command::Merge(m) => merge(m.directory).unwrap(),
+        Command::Merge(m) => merge(m.directory).await.unwrap(),
     }
 }

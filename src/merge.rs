@@ -4,8 +4,10 @@ use std::path::Path;
 use std::{fs, process};
 
 use anyhow::Result;
+use futures::future::join_all;
 
 use crate::error::IgLiveError;
+use crate::pts::get_pts;
 
 /// Merge video and audio segments downloaded by [download][crate::download::download] into a
 /// single `.mp4` video file.
@@ -16,7 +18,7 @@ use crate::error::IgLiveError;
 /// # Arguments
 ///
 /// `dir` - Directory containing downloaded video and audio segments.
-pub fn merge(dir: impl AsRef<Path>) -> Result<()> {
+pub async fn merge(dir: impl AsRef<Path>) -> Result<()> {
     let mut video_segments = vec![];
     let mut audio_segments = vec![];
 
@@ -51,8 +53,13 @@ pub fn merge(dir: impl AsRef<Path>) -> Result<()> {
         .to_string();
     let video_concat = dir.as_ref().join(file_name_base.clone() + "video.tmp");
     let audio_concat = dir.as_ref().join(file_name_base.clone() + "audio.tmp");
-    merge_segments(video_segments, &video_concat)?;
-    merge_segments(audio_segments, &audio_concat)?;
+    let merge_futs = [
+        merge_segments(video_segments, &video_concat),
+        merge_segments(audio_segments, &audio_concat),
+    ];
+    for r in join_all(merge_futs).await {
+        r?;
+    }
 
     // Mux into final file
     let output_path = dir.as_ref().join(file_name_base + ".mp4");
@@ -60,6 +67,7 @@ pub fn merge(dir: impl AsRef<Path>) -> Result<()> {
         .args([OsStr::new("-i"), video_concat.as_os_str()])
         .args([OsStr::new("-i"), audio_concat.as_os_str()])
         .args(["-c", "copy"])
+        .args(["-movflags", "+faststart"])
         .arg("-y")
         .arg(&output_path)
         .output()?;
@@ -76,15 +84,24 @@ pub fn merge(dir: impl AsRef<Path>) -> Result<()> {
     }
 }
 
-fn merge_segments(
+async fn merge_segments(
     segs: impl IntoIterator<Item = impl AsRef<Path>>,
     path: impl AsRef<Path>,
 ) -> Result<()> {
     let mut output = fs::File::create(path.as_ref())?;
+    let mut pts = None;
 
     // Write segments
     for seg in segs.into_iter() {
-        output.write_all(&fs::read(seg)?)?;
+        let seg = fs::read(seg)?;
+        let cur_pts = get_pts(seg.clone()).await.unwrap();
+        if let Some(pts) = pts {
+            if pts != cur_pts.0 {
+                eprintln!("WARNING: Missing segment at PTS={}", pts);
+            }
+        }
+        pts = Some(cur_pts.1);
+        output.write_all(&seg)?;
     }
 
     Ok(())

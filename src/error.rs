@@ -7,7 +7,7 @@ pub enum IgLiveError {
     #[error("Status code 404 received")]
     StatusNotFound,
     #[error("Missing init")]
-    MissingInit,
-    #[error("ffmpeg process failed")]
     FfmpegFail,
+    #[error("PTS too early")]
+    PtsTooEarly,
 }

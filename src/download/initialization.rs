@@ -1,4 +1,3 @@
-use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
@@ -16,7 +15,6 @@ pub async fn download_reps_init(
     client: &Client,
     url_base: &Url,
     reps: impl IntoIterator<Item = &Representation>,
-    dir: impl AsRef<Path> + Send,
     pb: Option<ProgressBar>,
 ) -> Result<()> {
     if let Some(pb) = pb.as_ref() {

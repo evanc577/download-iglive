@@ -20,7 +20,8 @@ use self::backwards::download_reps_backwards;
 use self::forwards::download_forwards;
 use self::initialization::download_reps_init;
 use crate::error::IgLiveError;
-use crate::mpd::{Mpd, Representation};
+use crate::mpd::{MediaType, Mpd, Representation};
+use crate::pts::get_pts;
 use crate::state::State;
 
 /// Options for download
@@ -87,7 +88,6 @@ pub async fn download(mpd_url: impl IntoUrl, config: DownloadConfig) -> Result<P
         &client,
         &url_base,
         [video_rep, audio_rep],
-        &dir_name,
         Some(pb_init),
     )
     .await?;
@@ -212,7 +212,15 @@ async fn download_rep(
                 .next()
                 .ok_or(IgLiveError::InvalidUrl)?,
         );
-        download_file(state.clone(), client, rep, &url, filename).await?;
+        download_file(
+            state.clone(),
+            client,
+            rep.media_type(),
+            false,
+            &url,
+            filename,
+        )
+        .await?;
 
         // Update state
         state
@@ -229,7 +237,8 @@ async fn download_rep(
 async fn download_file(
     state: Arc<Mutex<State>>,
     client: &Client,
-    rep: &Representation,
+    media_type: MediaType,
+    check_pts: bool,
     url: &Url,
     path: impl AsRef<Path>,
 ) -> Result<()> {
@@ -241,13 +250,33 @@ async fn download_file(
         return Err(anyhow!("Failed to download {}", url.as_str()));
     }
 
+    let mut buffer = Vec::new();
+    buffer
+        .write_all(state.lock().await.downloaded_init.get(&media_type).unwrap())
+        .await?;
+    buffer.write_all(&resp.bytes().await?).await?;
+
+    // Write to file
     let mut file_buffer = fs::File::create(path).await?;
-    file_buffer.write_all(state
+    file_buffer.write_all(&buffer).await?;
+
+    // Check pts
+    let pts = get_pts(buffer).await.unwrap();
+    if check_pts {
+        let target_pts = *state.lock().await.back_pts.get(&media_type).unwrap();
+        if target_pts != pts.1 {
+            return Err(IgLiveError::PtsTooEarly.into());
+        }
+    }
+
+    // Update pts
+    state
         .lock()
         .await
-        .downloaded_init
-        .get(&rep.media_type())
-        .unwrap()).await?;
-    file_buffer.write_all(&resp.bytes().await?).await?;
+        .back_pts
+        .entry(media_type)
+        .and_modify(|p| *p = std::cmp::min(*p, pts.0))
+        .or_insert(pts.0);
+
     Ok(())
 }
