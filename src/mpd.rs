@@ -7,10 +7,10 @@ use serde::Deserialize;
 pub struct Mpd {
     #[serde(rename = "Period")]
     period: Period,
-    #[serde(rename = "loapStreamId")]
+    #[serde(rename = "@loapStreamId")]
     pub id: String,
 
-    #[serde(rename = "publishFrameTime")]
+    #[serde(rename = "@publishFrameTime")]
     pub start_frame: usize,
 
     #[serde(skip)]
@@ -35,14 +35,18 @@ struct AdaptationSet {
 }
 
 #[derive(Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
 pub struct Representation {
     #[serde(rename = "SegmentTemplate")]
     pub segment_template: SegmentTemplate,
+    #[serde(rename = "@mimeType")]
     pub mime_type: String,
+    #[serde(rename = "@width")]
     pub width: Option<usize>,
+    #[serde(rename = "@height")]
     pub height: Option<usize>,
+    #[serde(rename = "@frameRate")]
     pub frame_rate: Option<usize>,
+    #[serde(rename = "@bandwidth")]
     pub bandwidth: usize,
 }
 
@@ -50,9 +54,9 @@ pub struct Representation {
 pub struct SegmentTemplate {
     #[serde(rename = "SegmentTimeline")]
     pub segment_timeline: SegmentTimeline,
-    #[serde(rename = "initialization")]
+    #[serde(rename = "@initialization")]
     pub initialization_path: String,
-    #[serde(rename = "media")]
+    #[serde(rename = "@media")]
     pub media_path: String,
 }
 
@@ -64,7 +68,9 @@ pub struct SegmentTimeline {
 
 #[derive(Deserialize, Debug)]
 pub struct Segment {
+    #[serde(rename = "@t")]
     pub t: usize,
+    #[serde(rename = "@d")]
     pub d: usize,
 }
 
