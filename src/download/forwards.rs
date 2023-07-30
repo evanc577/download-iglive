@@ -49,8 +49,8 @@ pub async fn download_forwards(
             .into_iter()
             .collect::<Result<_>>()?;
 
-        check_overlap(video_rep, latest_video_t);
-        check_overlap(audio_rep, latest_audio_t);
+        check_overlap(video_rep, latest_video_t, &pb);
+        check_overlap(audio_rep, latest_audio_t, &pb);
 
         // Update progress bar
         if let Some(pb) = pb.as_ref() {
@@ -74,7 +74,7 @@ pub async fn download_forwards(
     ret
 }
 
-fn check_overlap(rep: &Representation, latest_t: usize) {
+fn check_overlap(rep: &Representation, latest_t: usize, pb: &Option<ProgressBar>) {
     if !rep
         .segment_template
         .segment_timeline
@@ -82,6 +82,11 @@ fn check_overlap(rep: &Representation, latest_t: usize) {
         .iter()
         .any(|s| s.t == latest_t)
     {
-        eprintln!("Possible missed live segment!");
+        let msg = "Possible missed live segment!";
+        if let Some(pb) = pb.as_ref() {
+            pb.println(msg);
+        } else {
+            eprintln!("{msg}");
+        }
     }
 }

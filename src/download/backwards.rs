@@ -136,14 +136,24 @@ async fn download_backwards(
                         match e {
                             IgLiveError::StatusNotFound => continue,
                             IgLiveError::PtsTooEarly => {
-                                eprintln!("PTS TOO EARLY!!!\n\n\n\n\n\n\n");
+                                let msg = "Info: PTS too early";
+                                if let Some(pb) = pb.as_ref() {
+                                    pb.println(msg);
+                                } else {
+                                    eprintln!("{msg}");
+                                }
                                 lower_bound = t;
                                 continue;
                             }
                             _ => (),
                         }
                     }
-                    eprintln!("Download failed: {:?}", e);
+                    let msg = format!("Download failed: {:?}", e);
+                    if let Some(pb) = pb.as_ref() {
+                        pb.println(msg);
+                    } else {
+                        eprintln!("{msg}");
+                    }
                 }
             }
         }
