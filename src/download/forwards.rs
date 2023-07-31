@@ -17,7 +17,7 @@ pub async fn download_forwards(
     client: &Client,
     url_base: &Url,
     dir: impl AsRef<Path> + Send,
-    pb: Option<ProgressBar>,
+    pb: ProgressBar,
 ) -> Result<()> {
     // Set up 2 second interval
     let mut interval = time::interval(Duration::from_millis(1000));
@@ -53,13 +53,11 @@ pub async fn download_forwards(
         check_overlap(audio_rep, latest_audio_t, &pb);
 
         // Update progress bar
-        if let Some(pb) = pb.as_ref() {
-            pb.set_message(format!(
-                "Downloaded video segment {}, audio segment {}",
-                latest_video_t, latest_audio_t
-            ));
-            pb.tick();
-        }
+        pb.set_message(format!(
+            "Downloaded video segment {}, audio segment {}",
+            latest_video_t, latest_audio_t
+        ));
+        pb.tick();
 
         // Finish if stream ended
         if manifest.finished {
@@ -67,14 +65,12 @@ pub async fn download_forwards(
         }
     };
 
-    if let Some(pb) = pb {
-        pb.finish_with_message("Finished");
-    }
+    pb.finish_with_message("Finished");
 
     ret
 }
 
-fn check_overlap(rep: &Representation, latest_t: usize, pb: &Option<ProgressBar>) {
+fn check_overlap(rep: &Representation, latest_t: usize, pb: &ProgressBar) {
     if !rep
         .segment_template
         .segment_timeline
@@ -82,11 +78,6 @@ fn check_overlap(rep: &Representation, latest_t: usize, pb: &Option<ProgressBar>
         .iter()
         .any(|s| s.t == latest_t)
     {
-        let msg = format!("Possible missed live segment t={latest_t}");
-        if let Some(pb) = pb.as_ref() {
-            pb.println(msg);
-        } else {
-            eprintln!("{msg}");
-        }
+        pb.println(format!("Possible missed live segment t={latest_t}"));
     }
 }

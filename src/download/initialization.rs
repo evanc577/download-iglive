@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use futures::future;
 use indicatif::ProgressBar;
-use reqwest::{Url, Client, StatusCode};
+use reqwest::{Client, StatusCode, Url};
 use tokio::sync::Mutex;
 
 use crate::error::IgLiveError;
@@ -54,13 +54,16 @@ async fn download_init(
         return Err(IgLiveError::StatusNotFound.into());
     }
     if !resp.status().is_success() {
-        eprintln!("Received status code {}", resp.status().as_u16());
-        return Err(anyhow!("Failed to download {}", url.as_str()));
+        return Err(IgLiveError::StatusError(resp.status().into(), url.as_str().to_owned()).into());
     }
 
     let buffer: Vec<_> = resp.bytes().await?.into_iter().collect();
 
-    state.lock().await.downloaded_init.insert(media_type, buffer);
+    state
+        .lock()
+        .await
+        .downloaded_init
+        .insert(media_type, buffer);
 
     Ok(())
 }

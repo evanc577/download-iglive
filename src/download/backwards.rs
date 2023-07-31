@@ -17,7 +17,7 @@ pub async fn download_reps_backwards(
     state: Arc<Mutex<State>>,
     client: &Client,
     url_base: &Url,
-    reps: impl IntoIterator<Item = (&Representation, Option<ProgressBar>)>,
+    reps: impl IntoIterator<Item = (&Representation, ProgressBar)>,
     start_frame: usize,
     dir: impl AsRef<Path> + Send,
 ) -> Result<()> {
@@ -54,7 +54,7 @@ async fn download_backwards(
     rep: &Representation,
     start_frame: usize,
     dir: impl AsRef<Path>,
-    pb: Option<ProgressBar>,
+    pb: ProgressBar,
 ) -> Result<()> {
     let media_type = rep.media_type();
 
@@ -71,9 +71,7 @@ async fn download_backwards(
     'outer: loop {
         if latest_t <= start_frame as isize {
             // If reached first frame, finish successfully
-            if let Some(pb) = pb.as_ref() {
-                pb.finish_with_message("Finished");
-            }
+            pb.finish_with_message("Finished");
             return Ok(());
         }
 
@@ -90,11 +88,9 @@ async fn download_backwards(
                 continue;
             }
 
-            if let Some(pb) = pb.as_ref() {
-                // Update progress bar
-                pb.set_message(format!("Downloaded segment {}, checking {}", latest_t, t));
-                pb.tick();
-            }
+            // Update progress bar
+            pb.set_message(format!("Downloaded segment {}, checking {}", latest_t, t));
+            pb.tick();
 
             // Try to download segment
             let url = rep.download_url(url_base, t)?;
@@ -105,7 +101,7 @@ async fn download_backwards(
                     .next()
                     .ok_or(IgLiveError::InvalidUrl)?,
             );
-            match download_file(
+            let download_result = download_file(
                 state.clone(),
                 client,
                 rep.media_type(),
@@ -113,9 +109,9 @@ async fn download_backwards(
                 &url,
                 filename,
             )
-            .await
-            {
-                Ok(_) => {
+            .await;
+            match download_result {
+                Ok(()) => {
                     // Segment exists, continue onto next segment
                     latest_t = t;
                     // Update local copy
@@ -134,25 +130,21 @@ async fn download_backwards(
                 Err(e) => {
                     if let Some(e) = e.downcast_ref::<IgLiveError>() {
                         match e {
+                            // 404 segment number does not exist
                             IgLiveError::StatusNotFound => continue,
+                            // Segment exists but its PTS is too early, adjust the lower bound and
+                            // try again
                             IgLiveError::PtsTooEarly => {
-                                let msg = "Info: PTS too early";
-                                if let Some(pb) = pb.as_ref() {
-                                    pb.println(msg);
-                                } else {
-                                    eprintln!("{msg}");
-                                }
+                                pb.println("Info: PTS too early");
                                 lower_bound = t;
                                 continue;
                             }
-                            _ => (),
+                            // Other download error, skip the segment
+                            _ => {
+                                pb.println(format!("Download failed: {e:?}"));
+                                continue 'outer;
+                            }
                         }
-                    }
-                    let msg = format!("Download failed: {:?}", e);
-                    if let Some(pb) = pb.as_ref() {
-                        pb.println(msg);
-                    } else {
-                        eprintln!("{msg}");
                     }
                 }
             }

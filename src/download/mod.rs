@@ -7,7 +7,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use bitflags::bitflags;
 use futures::{future, Future};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
@@ -108,18 +108,13 @@ pub async fn download(mpd_url: impl IntoUrl, config: DownloadConfig) -> Result<P
     )
     .await?;
 
-    let pb_forwards;
-    let pb_video;
-    let pb_audio;
-
     // Download past and live segments
     let mut futures: Vec<Pin<Box<dyn Future<Output = Result<()>>>>> = vec![];
     if config.segments.contains(DownloadSegments::LIVE) {
         // Download live segments
-        let pb_forwards_tmp = m.add(ProgressBar::new_spinner());
-        pb_forwards_tmp.set_style(spinner_style.clone());
-        pb_forwards_tmp.set_prefix("      Live");
-        pb_forwards = Some(pb_forwards_tmp);
+        let pb_forwards = m.add(ProgressBar::new_spinner());
+        pb_forwards.set_style(spinner_style.clone());
+        pb_forwards.set_prefix("      Live");
 
         futures.push(Box::pin(download_forwards(
             state.clone(),
@@ -131,14 +126,12 @@ pub async fn download(mpd_url: impl IntoUrl, config: DownloadConfig) -> Result<P
     }
     if config.segments.contains(DownloadSegments::PAST) {
         // Download past segments
-        let pb_video_tmp = m.add(ProgressBar::new_spinner());
-        pb_video_tmp.set_style(spinner_style.clone());
-        pb_video_tmp.set_prefix("Past video");
-        pb_video = Some(pb_video_tmp);
-        let pb_audio_tmp = m.add(ProgressBar::new_spinner());
-        pb_audio_tmp.set_style(spinner_style.clone());
-        pb_audio_tmp.set_prefix("Past audio");
-        pb_audio = Some(pb_audio_tmp);
+        let pb_video = m.add(ProgressBar::new_spinner());
+        pb_video.set_style(spinner_style.clone());
+        pb_video.set_prefix("Past video");
+        let pb_audio = m.add(ProgressBar::new_spinner());
+        pb_audio.set_style(spinner_style.clone());
+        pb_audio.set_prefix("Past audio");
 
         futures.push(Box::pin(download_reps_backwards(
             state.clone(),
@@ -247,10 +240,12 @@ async fn download_file(
     if resp.status() == StatusCode::NOT_FOUND {
         return Err(IgLiveError::StatusNotFound.into());
     }
+
     if !resp.status().is_success() {
-        return Err(anyhow!("Failed to download {}", url.as_str()));
+        return Err(IgLiveError::StatusError(resp.status().into(), url.as_str().to_owned()).into());
     }
 
+    // Concat initialization and segment data
     let mut buffer = Vec::new();
     buffer
         .write_all(state.lock().await.downloaded_init.get(&media_type).unwrap())
@@ -262,7 +257,7 @@ async fn download_file(
     file_buffer.write_all(&buffer).await?;
 
     // Check pts
-    let pts = get_pts(buffer).await.unwrap();
+    let pts = get_pts(buffer).await?;
     if check_pts {
         let target_pts = *state.lock().await.back_pts.get(&media_type).unwrap();
         if target_pts != pts.1 {

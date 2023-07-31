@@ -1,5 +1,7 @@
 use std::path::PathBuf;
+use std::process;
 
+use anyhow::Result;
 use clap::{Parser, Subcommand};
 use download_iglive::download::{download, DownloadConfig, DownloadSegments};
 use download_iglive::merge::merge;
@@ -46,6 +48,13 @@ struct Merge {
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
+    if let Err(e) =  run(args).await {
+        eprintln!("{e}");
+        process::exit(1);
+    }
+}
+
+async fn run(args: Args) -> Result<()> {
     match args.command {
         Command::Download(d) => {
             // Config
@@ -60,13 +69,15 @@ async fn main() {
             };
 
             // Download live stream
-            let output_dir = download(&d.mpd_url, config).await.unwrap();
+            let output_dir = download(&d.mpd_url, config).await?;
 
             // Merge
             if !d.no_merge {
-                merge(output_dir).await.unwrap();
+                merge(output_dir).await?;
             }
         }
-        Command::Merge(m) => merge(m.directory).await.unwrap(),
+        Command::Merge(m) => merge(m.directory).await?,
     }
+
+    Ok(())
 }
