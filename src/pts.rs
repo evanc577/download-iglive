@@ -1,7 +1,8 @@
 use std::process::Stdio;
 
 use anyhow::Result;
-use tokio::{process::Command, io::AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
+use tokio::process::Command;
 
 pub async fn get_pts(data: Vec<u8>) -> Result<(usize, usize)> {
     let mut child = Command::new("ffprobe")
@@ -20,7 +21,11 @@ pub async fn get_pts(data: Vec<u8>) -> Result<(usize, usize)> {
         .unwrap();
     let mut stdin = child.stdin.take().unwrap();
     tokio::spawn(async move {
-        stdin.write_all(&data).await.unwrap();
+        if let outer @ Err(e) = &stdin.write_all(&data).await {
+            if e.kind() != std::io::ErrorKind::BrokenPipe {
+                outer.as_ref().unwrap();
+            }
+        }
     });
     let output = child.wait_with_output().await.unwrap();
     if !output.status.success() {

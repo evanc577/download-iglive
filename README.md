@@ -3,6 +3,10 @@
 (Experimental) Instagram live stream downloader.
 Can download live streams from start.
 
+## Requirements
+
+* `ffmpeg` and `ffprobe` installed and available in PATH
+
 ## Usage
 
 1. Play an ongoing Instagram live stream in desktop browser with a logged-in account.
