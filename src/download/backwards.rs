@@ -135,7 +135,7 @@ async fn download_backwards(
                             // Segment exists but its PTS is too early, adjust the lower bound and
                             // try again
                             IgLiveError::PtsTooEarly => {
-                                pb.println("Info: PTS too early");
+                                pb.println("Info: PTS too early, continuing search");
                                 lower_bound = t;
                                 continue;
                             }

@@ -23,7 +23,7 @@ impl State {
             .collect();
 
         let mut default_delta = HashMap::new();
-        for x in 18..=22 {
+        for x in 10..=40 {
             default_delta.insert(x * 100, 1);
             default_delta.insert(x * 100 + 33, 1);
             default_delta.insert(x * 100 + 67, 1);

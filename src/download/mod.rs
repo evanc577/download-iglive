@@ -260,7 +260,7 @@ async fn download_file(
     let pts = get_pts(buffer).await?;
     if check_pts {
         let target_pts = *state.lock().await.back_pts.get(&media_type).unwrap();
-        if target_pts != pts.1 {
+        if target_pts.abs_diff(pts.1) > 1 {
             return Err(IgLiveError::PtsTooEarly.into());
         }
     }
